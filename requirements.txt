@@ -1,0 +1,13 @@
+openai>=1.40
+pydantic>=2.5
+# step 11
+mcp>=1.2
+# step 14 (preview)
+# agent-framework
+# step 15
+# playwright
+# step 16
+# fastapi
+# uvicorn
+# step 18
+cryptography>=42
