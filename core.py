@@ -122,6 +122,8 @@ def run_agent(
         for call in msg.tool_calls:
             name = call.function.name
             args = json.loads(call.function.arguments or "{}")
+            if os.getenv("AGENT_DEBUG"):  # AGENT_DEBUG=1 shows the raw tool call exactly as the model sent it
+                on_event("sys", "raw tool_call: " + json.dumps(call.model_dump(), ensure_ascii=False))
             on_event("llm", f"wants {name}({json.dumps(args)})")
             if approve and not approve(name, args):
                 result = "DENIED by the human. Explain that you could not do this."
