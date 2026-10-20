@@ -83,7 +83,9 @@ def schemas(names: list[str] | None = None) -> list[dict]:
 
 
 # --------------------------------------------------------------------------- events
-C = {"user": "\033[96m", "llm": "\033[93m", "tool": "\033[92m", "sys": "\033[90m", "end": "\033[0m"}
+# 37m (light grey) rather than 90m: 90m is ANSI "bright black", which reads as a smudge
+# against a dark terminal. Every label is a light colour on the terminal's own background.
+C = {"user": "\033[96m", "llm": "\033[93m", "tool": "\033[92m", "sys": "\033[37m", "end": "\033[0m"}
 
 
 def say(kind: str, text: str) -> None:
