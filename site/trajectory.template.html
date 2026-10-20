@@ -4,20 +4,21 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700;800&family=Archivo:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
-/* Layout concept: a futurist poster set that moves. Paper, black ink, one acid-lime signal.
+/* Layout concept: a futurist poster set that moves. Paper, soft charcoal ink, one acid-lime signal.
+   No pure black anywhere: the darkest ink is a warm charcoal and the dark theme sits on charcoal, not black.
    Every lesson is an animated stage with a console under it, and a file you write next to it. */
 :root{
-  --bg:#e9e9e4; --paper:#f6f6f2; --ink:#0b0b0b; --ink-soft:#4a4a46; --grey:#9a9a94; --line:#0b0b0b;
-  --lime:#c9ff1f; --on-lime:#0b0b0b; --panel:#ffffff; --bad:#d9341b;
+  --bg:#e9e9e4; --paper:#f6f6f2; --ink:#3a3a36; --ink-soft:#5f5f59; --grey:#a4a49e; --line:#3a3a36;
+  --lime:#c9ff1f; --on-lime:#33332f; --panel:#ffffff; --bad:#d9341b;
   --font-display:"Barlow Condensed","Arial Narrow","Helvetica Neue",Arial,sans-serif;
   --font-body:"Archivo","Helvetica Neue",Arial,sans-serif;
   --font-mono:"IBM Plex Mono","SFMono-Regular",Consolas,"Liberation Mono",monospace;
   color-scheme:light;
 }
 @media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]){ --bg:#070707; --paper:#111110; --ink:#ecece7; --ink-soft:#b5b5ae; --grey:#6f6f69; --line:#ecece7; --panel:#171716; --bad:#ff6a4d; color-scheme:dark; }
+  :root:not([data-theme="light"]){ --bg:#262522; --paper:#302f2b; --ink:#ecece7; --ink-soft:#b5b5ae; --grey:#7b7b74; --line:#ecece7; --panel:#383731; --bad:#ff6a4d; color-scheme:dark; }
 }
-:root[data-theme="dark"]{ --bg:#070707; --paper:#111110; --ink:#ecece7; --ink-soft:#b5b5ae; --grey:#6f6f69; --line:#ecece7; --panel:#171716; --bad:#ff6a4d; color-scheme:dark; }
+:root[data-theme="dark"]{ --bg:#262522; --paper:#302f2b; --ink:#ecece7; --ink-soft:#b5b5ae; --grey:#7b7b74; --line:#ecece7; --panel:#383731; --bad:#ff6a4d; color-scheme:dark; }
 *{box-sizing:border-box}
 html{height:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:15px;line-height:1.5;
@@ -84,14 +85,14 @@ button:focus-visible,a:focus-visible,textarea:focus-visible,input:focus-visible,
 .stage .node.lime rect{fill:var(--lime)}
 .stage .node text{font-family:var(--font-display);font-weight:700;font-size:15px;text-transform:uppercase;fill:var(--ink);pointer-events:none}
 .stage .node.ink text{fill:var(--bg)}
-.stage .node.lime text{fill:#0b0b0b}
+.stage .node.lime text{fill:var(--on-lime)}
 .stage .node text.sub{font-family:var(--font-mono);font-weight:400;font-size:9px;text-transform:none;fill:var(--ink-soft)}
 .stage .node.ink text.sub{fill:var(--grey)}
-.stage .node.lime text.sub{fill:#0b0b0b}
+.stage .node.lime text.sub{fill:var(--on-lime)}
 .stage .node.on rect{stroke:var(--lime);stroke-width:4;filter:drop-shadow(0 0 6px var(--lime))}
 .stage .node.bad rect{stroke:var(--bad);stroke-width:4}
 .stage .link{stroke:var(--grey);stroke-width:1.5;stroke-dasharray:4 4;fill:none}
-.stage .packet rect{fill:var(--lime);stroke:#0b0b0b;stroke-width:1.5}
+.stage .packet rect{fill:var(--lime);stroke:var(--on-lime);stroke-width:1.5}
 .stage .packet text{font-family:var(--font-mono);font-size:9.5px;fill:var(--ink);paint-order:stroke;stroke:var(--paper);stroke-width:3px;stroke-linejoin:round}
 .stage .barfill{fill:var(--lime)}
 .stage .grid{stroke:var(--grey);stroke-width:.5;opacity:.35}
@@ -170,7 +171,7 @@ button:focus-visible,a:focus-visible,textarea:focus-visible,input:focus-visible,
 .marks i.on{background:var(--lime);opacity:1}
 
 /* lesson sheet */
-.drawer{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.55);display:none;justify-content:flex-end}
+.drawer{position:fixed;inset:0;z-index:40;background:rgba(48,47,43,.55);display:none;justify-content:flex-end}
 .drawer.open{display:flex}
 .sheet{width:min(1240px,100%);height:100%;background:var(--bg);overflow:auto;border-left:2px solid var(--line);display:flex;flex-direction:column;padding-left:max(0px,env(safe-area-inset-left,0px));padding-right:max(0px,env(safe-area-inset-right,0px))}
 .sheethead{position:sticky;top:0;z-index:2;background:var(--ink);color:var(--bg);display:flex;align-items:center;gap:12px;padding:10px 16px;padding-top:calc(10px + env(safe-area-inset-top,0px));flex-wrap:wrap}
