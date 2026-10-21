@@ -59,6 +59,12 @@ button:focus-visible,a:focus-visible,textarea:focus-visible,input:focus-visible,
 .nav button:hover{border-color:var(--lime)}
 .rank{display:flex;align-items:center;gap:8px;border:1px solid var(--on-fill-soft);padding:4px 8px}
 .rank b{font-family:var(--font-display);font-size:16px;text-transform:uppercase;letter-spacing:.04em;color:var(--lime)}
+/* Where progress is being kept, stated plainly: a page that silently fell back to
+   this-browser-only storage is how progress goes missing without anyone noticing. */
+.sync{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--on-fill-soft);padding:4px 8px;white-space:nowrap}
+.sync::before{content:"";width:8px;height:8px;background:var(--on-fill-soft);flex:none}
+.sync[data-state="on"]{border-color:var(--lime);color:var(--lime)}
+.sync[data-state="on"]::before{background:var(--lime)}
 
 /* hero */
 .hero{margin-top:22px;background:var(--paper);border:2px solid var(--line);display:grid;grid-template-columns:52px 1fr 1.05fr}
@@ -278,7 +284,8 @@ footer{margin-top:40px;border-top:2px solid var(--line);padding-top:14px;display
       <button data-view="build">Build</button>
       <button data-view="logbook">Logbook</button>
     </nav>
-    <div class="rank" title="Rank from XP earned on this device"><span class="mono">Rank</span><b id="rankName">Cadet</b><span class="mono" id="xpLabel">0 XP</span></div>
+    <span class="mono sync" id="syncState" data-state="wait" title="Where this page keeps your progress">Local</span>
+    <div class="rank" title="Rank from XP earned across your devices"><span class="mono">Rank</span><b id="rankName">Cadet</b><span class="mono" id="xpLabel">0 XP</span></div>
   </div>
 </header>
 
@@ -329,7 +336,7 @@ footer{margin-top:40px;border-top:2px solid var(--line);padding-top:14px;display
           <div class="trace" id="trace"><div class="empty">Spans appear here as the agent runs: one trace per goal, one span per model turn or tool call.</div></div>
         </div>
         <div class="panel">
-          <div class="panelhead"><h3>Long-term memory</h3><span class="mono">survives reloads on this device</span></div>
+          <div class="panelhead"><h3>Long-term memory</h3><span class="mono">survives reloads · synced to your account</span></div>
           <ul class="memlist" id="memlist"></ul>
         </div>
       </div>
@@ -386,7 +393,7 @@ gh repo create field-agent --public --source . --push</pre>
 
   <footer>
     <span>Based on <a href="https://microsoft.github.io/ai-agents-for-beginners/" target="_blank" rel="noopener">AI Agents for Beginners</a> (Microsoft, MIT). Scenes and code are this page's own.</span>
-    <span>Progress stays in this browser. Visual direction after the Futurist UI poster series.</span>
+    <span>Progress syncs to your Claude account, with a copy kept in this browser. Visual direction after the Futurist UI poster series.</span>
   </footer>
 </main>
 
@@ -780,11 +787,73 @@ const L=[
 ];
 
 /* ================================== STATE ==================================== */
-const KEY="agentic-trajectory-v2";
+const KEY="agentic-trajectory-v2",ADOPT_KEY="agentic-trajectory-adopted";
 const blank=()=>({watched:{},ran:{},shipped:{},journal:{},days:[],last:1,mem:[]});
 let S=blank();
+/* Progress lives in two places. localStorage paints the page instantly and keeps it
+   working signed out; the artifact's own database carries the same progress to every
+   browser, app and device. Once a browser has met the database the database is the
+   authority -- that is what makes UN-ticking a box stick, instead of the old value
+   arriving back on the next sync. The first meeting is the one exception: whatever
+   this browser already had is merged upward, so progress made before the page could
+   sync is adopted rather than overwritten. */
+function mergeInto(t,inc){
+  /* Earliest timestamp wins, so merging is order-independent: two devices adopting
+     each other in either order land on the same state. */
+  ["watched","ran","shipped"].forEach(k=>{ for(const n in (inc[k]||{})){ const a=t[k][n],b=inc[k][n]; if(!a||new Date(b)<new Date(a)) t[k][n]=b; } });
+  for(const k in (inc.journal||{})){ const a=t.journal[k],b=inc.journal[k]; if(b&&(!a||new Date(b.at)>new Date(a.at))) t.journal[k]=b; }
+  t.days=[...new Set([...t.days,...(inc.days||[])])].sort();
+  const seen=new Set(t.mem.map(m=>m.t+"|"+m.at));
+  (inc.mem||[]).forEach(m=>{ const id=m.t+"|"+m.at; if(!seen.has(id)){ seen.add(id); t.mem.push(m); } });
+  t.last=Math.max(t.last||1,inc.last||1);
+  return t;
+}
 function load(){ try{ const raw=localStorage.getItem(KEY); if(raw) S=Object.assign(blank(),JSON.parse(raw)); }catch(e){} }
-function save(){ try{ const d=new Date().toISOString().slice(0,10); if(!S.days.includes(d)) S.days.push(d); localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} refresh(); }
+function stash(){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} }
+function save(){ const d=new Date().toISOString().slice(0,10); if(!S.days.includes(d)) S.days.push(d); stash(); queuePush(); refresh(); }
+/* Re-render everything the state drives, including an open lesson sheet. */
+function redraw(){
+  renderJourney(); renderBuild(); renderMem(); refresh();
+  if(current!=null&&$("#ran-"+current)){
+    [["ran",S.ran],["ship",S.shipped]].forEach(([pre,m])=>{ const c=$("#"+pre+"-"+current); if(!c) return; c.checked=!!m[current]; c.closest("li").classList.toggle("on",c.checked); });
+    renderJournal();
+  }
+}
+let cloudRef=null,pushTimer=null,writing=false,dirty=false;
+function syncBadge(state,label){ const el=$("#syncState"); if(el){ el.dataset.state=state; el.textContent=label; } }
+function queuePush(){ if(!cloudRef) return; clearTimeout(pushTimer); pushTimer=setTimeout(pushNow,600); }
+async function pushNow(){
+  if(!cloudRef) return;
+  if(writing){ dirty=true; return; }            /* one write at a time per document */
+  writing=true;
+  try{ await cloudRef.set({state:S,at:new Date().toISOString()}); syncBadge("on","Synced"); }
+  catch(e){ syncBadge("off",(e&&e.code==="invalid_argument")?"Read only":"This browser only"); }
+  finally{ writing=false; if(dirty){ dirty=false; queuePush(); } }
+}
+async function startSync(){
+  if(!window.claude||!window.claude.use){ syncBadge("off","This browser only"); return; }
+  syncBadge("wait","Checking");
+  let db=null,user=null;
+  try{ [db,user]=await Promise.all([claude.use("db"),claude.use("user")]); }catch(e){}
+  const uid=user?await user.id().catch(()=>null):null;
+  if(!db||!uid){ syncBadge("off","This browser only"); return; }   /* signed out: local only */
+  cloudRef=db.collection("progress").doc(uid);
+  let adopted=false; try{ adopted=localStorage.getItem(ADOPT_KEY)==="1"; }catch(e){}
+  try{
+    const snap=await cloudRef.get();
+    const remote=snap.exists?(snap.data()||{}).state:null;
+    if(remote){ if(adopted) S=Object.assign(blank(),remote); else mergeInto(S,Object.assign(blank(),remote)); }
+    try{ localStorage.setItem(ADOPT_KEY,"1"); }catch(e){}
+    stash(); redraw(); await pushNow();
+  }catch(e){ cloudRef=null; syncBadge("off","This browser only"); return; }
+  /* Another tab, app or device ticking a box lands here. */
+  cloudRef.onSnapshot(snap=>{
+    if(!snap.exists||snap.metadata.hasPendingWrites) return;
+    const remote=(snap.data()||{}).state;
+    if(!remote||JSON.stringify(remote)===JSON.stringify(S)) return;
+    S=Object.assign(blank(),remote); stash(); redraw();
+  },e=>{ syncBadge("off",(e&&e.code==="revoked")?"Sync stopped":"This browser only"); });
+}
 const XP={watched:30,ran:100,shipped:50,journal:20};
 const RANKS=[["Cadet",0],["Operator",400],["Architect",1200],["Orchestrator",2200],["Sovereign",3400]];
 function totalXP(){ return Object.keys(S.watched).length*XP.watched+Object.keys(S.ran).length*XP.ran+Object.keys(S.shipped).length*XP.shipped+Object.keys(S.journal).length*XP.journal; }
@@ -952,11 +1021,11 @@ $("#copySetup").onclick=()=>copyText($("#setupCmd").textContent,"Setup commands"
 $("#copyCore").onclick=()=>copyText(CODE["core.py"]||"","core.py"); $("#copyReadme").onclick=()=>copyText(CODE["README.md"]||"","README.md");
 $("#copyNotes").onclick=()=>copyText(["agents.md","patterns.md","production.md"].map(f=>`===== notes/${f} =====\n${CODE["notes/"+f]||""}`).join("\n\n"),"Notes");
 $("#copyMd").onclick=()=>copyText(exportMd(),"Markdown"); $("#copyJson").onclick=()=>copyText(JSON.stringify({app:KEY,exported:new Date().toISOString(),state:S}),"Save file");
-$("#importBtn").onclick=()=>{ try{ const o=JSON.parse($("#importBox").value); const st=o.state||o; if(!st||typeof st!=="object"||!("journal" in st)) throw 0; const inc=Object.assign(blank(),st); ["watched","ran","shipped"].forEach(k=>Object.assign(S[k],inc[k])); for(const k in inc.journal){ const a=S.journal[k],b=inc.journal[k]; if(!a||new Date(b.at)>new Date(a.at)) S.journal[k]=b; } S.days=[...new Set([...S.days,...(inc.days||[])])].sort(); S.mem=[...S.mem,...(inc.mem||[])]; save(); renderJourney(); renderLogbook(); renderMem(); $("#importBox").value=""; toast("Merged"); }catch(e){ toast("Not a save file from this page"); } };
+$("#importBtn").onclick=()=>{ try{ const o=JSON.parse($("#importBox").value); const st=o.state||o; if(!st||typeof st!=="object"||!("journal" in st)) throw 0; mergeInto(S,Object.assign(blank(),st)); save(); renderJourney(); renderLogbook(); renderMem(); $("#importBox").value=""; toast("Merged"); }catch(e){ toast("Not a save file from this page"); } };
 let resetArmed=0; $("#resetBtn").onclick=()=>{ const now=Date.now(); if(now-resetArmed<5000){ S=blank(); save(); renderJourney(); renderLogbook(); renderBuild(); renderMem(); $("#resetConfirm").hidden=true; resetArmed=0; toast("Progress reset"); } else { resetArmed=now; $("#resetConfirm").hidden=false; setTimeout(()=>{$("#resetConfirm").hidden=true;},5000); } };
 window.addEventListener("hashchange",()=>{ const m=(location.hash||"").match(/^#l(\d\d)$/); if(m){ const n=+m[1]; if(n>=1&&n<=18&&n!==current) openLesson(n); } else if(current!==null&&["run","journey","build","logbook"].includes(location.hash.slice(1))) closeLesson(); });
 
-load(); renderJourney(); renderBuild(); setupPlayground(); refresh();
+load(); renderJourney(); renderBuild(); setupPlayground(); refresh(); startSync();
 /* hero: scene 1 as an ambient loop, controls hidden, resting frame visible first */
 const heroDef=Object.assign({},SCENES[1],{w:780,h:360,gap:900}); const hero=new Stage($("#heroStage"),heroDef,{bare:true});
 /* the hero has no controls of its own, so it follows whatever speed the lesson stages are set to */
