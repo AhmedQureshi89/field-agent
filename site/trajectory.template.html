@@ -179,9 +179,15 @@ button:focus-visible,a:focus-visible,textarea:focus-visible,input:focus-visible,
 .marks i.on{background:var(--lime);opacity:1}
 
 /* lesson sheet */
-.drawer{position:fixed;inset:0;z-index:40;background:rgba(48,47,43,.55);display:none;justify-content:flex-end}
-.drawer.open{display:flex}
-.sheet{width:min(1240px,100%);height:100%;background:var(--bg);overflow:auto;border-left:2px solid var(--line);display:flex;flex-direction:column;padding-left:max(0px,env(safe-area-inset-left,0px));padding-right:max(0px,env(safe-area-inset-right,0px))}
+/* The lesson sheet is ordinary page content, not a fixed overlay. A fixed overlay
+   is anchored to the viewport, and this page is read inside embeddings whose
+   viewport is not what the reader can see -- the sheet then opens off screen and
+   looks like a dead button. In flow it cannot land anywhere but where the rest of
+   the page is, which is the same mechanism the Run/Journey/Build/Logbook views use. */
+.drawer{display:none}
+.drawer.open{display:block}
+.sheet{width:100%;max-width:1240px;margin:0 auto;background:var(--bg);display:flex;flex-direction:column;
+  padding-left:max(0px,env(safe-area-inset-left,0px));padding-right:max(0px,env(safe-area-inset-right,0px))}
 .sheethead{position:sticky;top:0;z-index:2;background:var(--fill);color:var(--on-fill);display:flex;align-items:center;gap:12px;padding:10px 16px;padding-top:calc(10px + env(safe-area-inset-top,0px));flex-wrap:wrap}
 .sheethead .mono{color:var(--on-fill-soft)}
 .sheethead .title{font-family:var(--font-display);font-weight:700;font-size:20px;text-transform:uppercase;flex:1;min-width:160px}
@@ -282,7 +288,7 @@ footer{margin-top:40px;border-top:2px solid var(--line);padding-top:14px;display
   </div>
 </header>
 
-<main class="wrap">
+<main class="wrap" id="main">
   <section class="hero" aria-label="Overview">
     <div class="strip" aria-hidden="true"><span>AI AGENTS FOR BEGINNERS ▸ 18 LESSONS ▸ 18 ANIMATED SCENES ▸ 18 FILES YOU WRITE ▸ ONE REPO YOU SHIP</span></div>
     <div class="main">
@@ -390,7 +396,7 @@ gh repo create field-agent --public --source . --push</pre>
   </footer>
 </main>
 
-<div class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="sheetTitle"><div class="sheet" id="sheet"></div></div>
+<div class="drawer" id="drawer" role="region" aria-labelledby="sheetTitle"><div class="sheet" id="sheet"></div></div>
 <div class="toast" id="toast" role="status"></div>
 
 <script>
@@ -807,35 +813,6 @@ function card(l){ const st=status(l.n); const chip=st==="done"?'<span class="chi
   return `<button class="card" data-n="${l.n}" aria-label="Open lesson ${l.n}: ${esc(l.title)}"><div class="row"><span class="n">L${pad(l.n)}</span>${chip}</div><h3>${esc(l.title)}</h3><p class="moves">▶ ${esc(l.moves)}</p><div class="bottom"><span class="mono">${esc(l.file)}</span><span class="marks" title="watched · ran · shipped"><i class="${S.watched[l.n]?"on":""}"></i><i class="${S.ran[l.n]?"on":""}"></i><i class="${S.shipped[l.n]?"on":""}"></i></span></div></button>`; }
 
 let current=null, lessonStage=null, sampleFn, tutorTurns={}, tutorCtl=null;
-/* Some embeddings size this page's iframe to its full content height -- the artifact
-   viewer does, and so do several docs viewers. The iframe's viewport is then the whole
-   document, so a position:fixed overlay anchors to the top of the DOCUMENT rather than
-   to what the reader can see: the lesson sheet opens thousands of pixels above them,
-   showing a blank area the same colour as the page. It reads as "the lesson will not
-   open". Measure the region that is genuinely on screen and pin the drawer to it.
-   IntersectionObserver reports that region correctly even from a cross-origin iframe. */
-let visibleRect=null;
-function watchVisibleRegion(){
-  if(!("IntersectionObserver" in window)) return;              // then inset:0 stands, as before
-  const probe=document.createElement("div");
-  probe.setAttribute("aria-hidden","true");
-  // fixed, so the probe is exactly the viewport box and adds nothing to scrollHeight
-  probe.style.cssText="position:fixed;inset:0;opacity:0;pointer-events:none;z-index:-1";
-  document.body.appendChild(probe);
-  new IntersectionObserver(es=>{
-    const r=es[es.length-1].intersectionRect;
-    visibleRect=r.height?r:null;
-    if($("#drawer").classList.contains("open")) pinDrawer();   // follow the reader as they scroll
-  },{threshold:Array.from({length:101},(_,i)=>i/100)}).observe(probe);
-}
-function pinDrawer(){
-  const dr=$("#drawer");
-  // A normal viewport needs nothing: inset:0 already covers exactly what is visible.
-  if(!visibleRect || window.innerHeight<=visibleRect.height+2){ dr.style.top=dr.style.height=dr.style.bottom=""; return; }
-  dr.style.top=Math.max(0,visibleRect.top)+"px";
-  dr.style.height=visibleRect.height+"px";
-  dr.style.bottom="auto";
-}
 function openLesson(n){
   current=n; S.last=n; save(); const l=L[n-1]; const sheet=$("#sheet");
   sheet.innerHTML=`<div class="sheethead"><span class="mono">L${pad(n)} / 18 · Phase ${PHASES.find(p=>p.lessons.includes(n)).id}</span><span class="title" id="sheetTitle">${esc(l.title)}</span><button id="prevL" ${n===1?"disabled":""}>← L${pad(Math.max(1,n-1))}</button><button id="nextL" ${n===18?"disabled":""}>L${pad(Math.min(18,n+1))} →</button><button id="closeL">✕ Close</button></div>
@@ -856,7 +833,10 @@ function openLesson(n){
       <div class="panel tutor" id="tutorPanel" hidden><div class="panelhead"><h3>Ask the tutor</h3><span class="mono">Claude · your account</span></div><div class="log" id="tutorLog"></div><form id="tutorForm"><input id="tutorIn" type="text" placeholder="Ask about this scene or this step" aria-label="Question" autocomplete="off"><button class="btn small lime" type="submit" id="tutorSend">Ask</button><button class="btn small" type="button" id="tutorStop" hidden>Stop</button></form><p class="note" id="tutorNote">Knows this lesson's scene and file. A study partner, not the source.</p></div>
     </div>
   </div>`;
-  $("#drawer").classList.add("open"); pinDrawer(); document.body.style.overflow="hidden"; sheet.scrollTop=0;
+  $("#main").hidden=true; $("#drawer").classList.add("open");
+  /* scrollIntoView on an in-flow element also scrolls any ancestor frame, which is
+     what brings the sheet into view inside an embedding. */
+  window.scrollTo(0,0); $("#drawer").scrollIntoView({block:"start"});
   lessonStage=new Stage($("#lessonStage"), SCENES[n], {onDone:()=>{ if(!S.watched[n]){ S.watched[n]=new Date().toISOString(); save(); toast("+30 XP · scene watched"); } }});
   $("#lessonCode").innerHTML=codeCard(l.file,{max:460}); wireCopies($("#lessonCode"));
   $("#closeL").onclick=closeLesson; $("#prevL").onclick=()=>openLesson(n-1); $("#nextL").onclick=()=>openLesson(n+1);
@@ -868,7 +848,7 @@ function openLesson(n){
   if(location.hash!=="#l"+pad(n)) history.replaceState(null,"","#l"+pad(n));
   $("#closeL").focus();
 }
-function closeLesson(){ $("#drawer").classList.remove("open"); document.body.style.overflow=""; if(lessonStage) lessonStage.pause(); current=null; if(tutorCtl) tutorCtl.abort(); history.replaceState(null,"","#"+activeView); renderJourney(); renderBuild(); refresh(); }
+function closeLesson(){ $("#drawer").classList.remove("open"); $("#main").hidden=false; if(lessonStage) lessonStage.pause(); current=null; if(tutorCtl) tutorCtl.abort(); history.replaceState(null,"","#"+activeView); renderJourney(); renderBuild(); refresh(); }
 let jTimer;
 function renderJournal(){ const j=S.journal[current]||{}; const ta=$("#jtext"); ta.value=j.text||""; jmeta();
   ta.oninput=()=>{ clearTimeout(jTimer); jTimer=setTimeout(()=>{ const had=!!(S.journal[current]||{}).text; if(ta.value.trim()) S.journal[current]={text:ta.value,at:new Date().toISOString()}; else delete S.journal[current]; save(); jmeta(); if(!had&&ta.value.trim()) toast("+20 XP · first entry"); },500); };
@@ -985,7 +965,7 @@ $("#importBtn").onclick=()=>{ try{ const o=JSON.parse($("#importBox").value); co
 let resetArmed=0; $("#resetBtn").onclick=()=>{ const now=Date.now(); if(now-resetArmed<5000){ S=blank(); save(); renderJourney(); renderLogbook(); renderBuild(); renderMem(); $("#resetConfirm").hidden=true; resetArmed=0; toast("Progress reset"); } else { resetArmed=now; $("#resetConfirm").hidden=false; setTimeout(()=>{$("#resetConfirm").hidden=true;},5000); } };
 window.addEventListener("hashchange",()=>{ const m=(location.hash||"").match(/^#l(\d\d)$/); if(m){ const n=+m[1]; if(n>=1&&n<=18&&n!==current) openLesson(n); } else if(current!==null&&["run","journey","build","logbook"].includes(location.hash.slice(1))) closeLesson(); });
 
-load(); renderJourney(); renderBuild(); setupPlayground(); refresh(); watchVisibleRegion();
+load(); renderJourney(); renderBuild(); setupPlayground(); refresh();
 /* hero: scene 1 as an ambient loop, controls hidden, resting frame visible first */
 const heroDef=Object.assign({},SCENES[1],{w:780,h:360,gap:900}); const hero=new Stage($("#heroStage"),heroDef,{bare:true});
 /* the hero has no controls of its own, so it follows whatever speed the lesson stages are set to */
