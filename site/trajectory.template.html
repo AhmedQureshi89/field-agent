@@ -814,6 +814,17 @@ function mergeInto(t,inc){
   t.last=Math.max(t.last||1,inc.last||1);
   return t;
 }
+/* The database hands back frozen objects. Object.assign copies their nested arrays
+   and objects into S by reference, so S ends up partly immutable, and the next
+   save() -- which pushes today's date onto S.days -- throws "object is not
+   extensible" and takes openLesson down with it on its very first line. It only
+   bites once the date has moved past every date already stored, which is why this
+   page worked on the day the progress was made and stopped working afterwards.
+   Thaw at the boundary, so nothing frozen is ever reachable from S. */
+function thaw(v){
+  try{ return structuredClone(v); }
+  catch(e){ return JSON.parse(JSON.stringify(v)); }
+}
 function load(){ try{ const raw=localStorage.getItem(KEY); if(raw) S=Object.assign(blank(),JSON.parse(raw)); }catch(e){} }
 function stash(){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} }
 function save(){ const d=new Date().toISOString().slice(0,10); if(!S.days.includes(d)) S.days.push(d); stash(); queuePush(); refresh(); }
@@ -848,7 +859,7 @@ async function startSync(){
   try{
     const snap=await cloudRef.get();
     const remote=snap.exists?(snap.data()||{}).state:null;
-    if(remote){ if(adopted) S=Object.assign(blank(),remote); else mergeInto(S,Object.assign(blank(),remote)); }
+    if(remote){ const r=thaw(remote); if(adopted) S=Object.assign(blank(),r); else mergeInto(S,Object.assign(blank(),r)); }
     try{ localStorage.setItem(ADOPT_KEY,"1"); }catch(e){}
     stash(); redraw(); await pushNow();
   }catch(e){ cloudRef=null; syncBadge("off","This browser only"); return; }
@@ -857,7 +868,7 @@ async function startSync(){
     if(!snap.exists||snap.metadata.hasPendingWrites) return;
     const remote=(snap.data()||{}).state;
     if(!remote||JSON.stringify(remote)===JSON.stringify(S)) return;
-    S=Object.assign(blank(),remote); stash(); redraw();
+    S=Object.assign(blank(),thaw(remote)); stash(); redraw();
   },e=>{ syncBadge("off",(e&&e.code==="revoked")?"Sync stopped":"This browser only"); });
 }
 const XP={watched:30,ran:100,shipped:50,journal:20};
