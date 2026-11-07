@@ -44,7 +44,15 @@ python step01_hello_agent.py
 
 `site/agentic-trajectory.html` is the companion page: eighteen animated scenes of the mechanisms these
 steps build, a live playground, and the build track with this code bundled in. It is published at
-https://claude.ai/artifact/ULQmLEw66Wg8obNNw89iEM. To rebuild it after editing any step file:
+https://claude.ai/artifact/ULQmLEw66Wg8obNNw89iEM.
+
+Progress (scenes watched, steps run and committed, journal entries) is kept in two places: the
+browser's localStorage, which paints the page instantly and keeps it working signed out, and the
+artifact's own database, which carries the same progress to every browser and device. The badge in
+the top bar says which of the two is in force. Published elsewhere, or opened as a local file, the
+database is simply absent and the page falls back to this-browser-only storage.
+
+To rebuild the page after editing any step file:
 
 ```powershell
 python siteuild_page.py
