@@ -55,7 +55,7 @@ database is simply absent and the page falls back to this-browser-only storage.
 To rebuild the page after editing any step file:
 
 ```powershell
-python siteuild_page.py
+python site\build_page.py
 ```
 
 ## Release it
